@@ -1,0 +1,892 @@
+{
+  "name": "AI Resume Screening Agent | n8n HR Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "maxResults": 5,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -240,
+        -64
+      ],
+      "id": "a3fa5f95-ef77-4340-a9e0-3759a6e69088",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f55493f2-735d-4677-88a8-b2ba5cbc95fe",
+              "leftValue": "={{ $binary.attachment_0?.mimeType || '' }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        128,
+        -64
+      ],
+      "id": "abe45c08-4a2d-4ae4-8e25-ec524abe4fad",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        -64
+      ],
+      "id": "6a3a62ad-7776-44db-86a2-83533894d6a8",
+      "name": "Get CV Attachment",
+      "webhookId": "eca7e46d-88de-405b-b6c3-ced3b1f0221a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "attachment_0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        -96
+      ],
+      "id": "23c82e43-ac30-48f0-92fb-17c5f70d69eb",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        480,
+        128
+      ],
+      "id": "d41faa2f-f74d-47af-b256-19c50ab42ba3",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "mxFo5dqFivMGj5Z6",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an AI Resume Screening Assistant for HR.\n\nAnalyze the candidate resume against the job requirements.\n\nImportant rules:\n- Do not make final hiring decisions.\n- Do not reject based on age, gender, religion, race, marital status, nationality, or personal background.\n- Only evaluate job-related skills, education, tools, experience, and role fit.\n- If any eligibility detail needs human review, write it in human_review_required.\n\nJOB ROLE:\nArchitectural Engineer\n\nJOB REQUIREMENTS:\n- Bachelor's Degree in Architecture\n- Experience in architectural design\n- Experience in engineering consultancy projects\n- AutoCAD\n- Revit\n- SketchUp\n- Good communication skills\n- Riyadh role location fit\n\nRESUME TEXT:\n{{ $json.text }}\n\nReturn ONLY valid JSON in this exact format:\n\n{\n  \"candidate_name\": \"\",\n  \"email\": \"\",\n  \"phone\": \"\",\n  \"role_applied\": \"Architectural Engineer\",\n  \"current_location\": \"\",\n  \"current_job_title\": \"\",\n  \"total_experience\": \"\",\n  \"degree\": \"\",\n  \"key_skills\": \"\",\n  \"tools\": \"\",\n  \"matched_requirements\": \"\",\n  \"missing_requirements\": \"\",\n  \"score\": 0,\n  \"recommendation\": \"\",\n  \"reason\": \"\",\n  \"human_review_required\": \"\"\n}\n\nScoring:\n85-100 = Strong match, recommendation Shortlist\n70-84 = Good match, recommendation Shortlist\n50-69 = Partial match, recommendation Maybe\nBelow 50 = Weak match, recommendation Reject\n\nKeep reason short and professional.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        544,
+        -96
+      ],
+      "id": "9796ee5f-1771-45d3-b389-0f25baf9b9e9",
+      "name": "AI Resume Screener"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let raw = $json.text || $json.output || $json.response || $json.result || \"\";\n\n// Agar output object hai to string bana do\nif (typeof raw !== \"string\") {\n  raw = JSON.stringify(raw);\n}\n\nraw = raw.trim();\n\n// Markdown/code block remove\nraw = raw.replace(/^```json/i, \"\");\nraw = raw.replace(/^```/i, \"\");\nraw = raw.replace(/```$/i, \"\");\nraw = raw.trim();\n\n// JSON object extract\nconst match = raw.match(/\\{[\\s\\S]*\\}/);\nif (match) {\n  raw = match[0];\n}\n\nlet data;\n\ntry {\n  data = JSON.parse(raw);\n} catch (error) {\n  data = {\n    candidate_name: \"\",\n    email: \"\",\n    phone: \"\",\n    role_applied: \"Architectural Engineer\",\n    current_location: \"\",\n    current_job_title: \"\",\n    total_experience: \"\",\n    degree: \"\",\n    key_skills: \"\",\n    tools: \"\",\n    matched_requirements: \"\",\n    missing_requirements: \"\",\n    score: 0,\n    recommendation: \"Human Review\",\n    reason: \"AI JSON parse nahi hua. Manual review required.\",\n    human_review_required: \"Yes\"\n  };\n}\n\nreturn {\n  json: data\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "f4d29c1d-75b6-46d1-bbb1-822d3c8d45fa",
+      "name": "Parse AI JSON"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "546e7765-5578-4f88-bb83-b87f3910d849",
+              "name": "Date",
+              "value": "={{ $now }}",
+              "type": "string"
+            },
+            {
+              "id": "0d525100-9d07-4c6a-8523-74bc2b1e2240",
+              "name": "Candidate Name",
+              "value": "={{ $json.candidate_name }}",
+              "type": "string"
+            },
+            {
+              "id": "4601b6d7-9e34-4d52-ad4f-29b3dcb70f2f",
+              "name": "Email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "3f889183-6db8-4136-9a8a-784d2eb43129",
+              "name": "Phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "7ff64966-6a30-4eac-9a4e-96178b3bc536",
+              "name": "Role Applied",
+              "value": "={{ $json.role_applied }}",
+              "type": "string"
+            },
+            {
+              "id": "8a883879-59f9-4c4a-90a2-53a8be59abf4",
+              "name": "Current Location",
+              "value": "={{ $json.current_location }}",
+              "type": "string"
+            },
+            {
+              "id": "264bd966-d22a-4b59-89ce-f29514560d15",
+              "name": "Current Job Title",
+              "value": "={{ $json.current_job_title }}",
+              "type": "string"
+            },
+            {
+              "id": "b1f6e83e-4e4a-419a-9d4e-6f9f57dc9c42",
+              "name": "Total Experience",
+              "value": "={{ $json.total_experience }}",
+              "type": "string"
+            },
+            {
+              "id": "ae8bd40c-7925-4c3b-b3a9-7536c7e576e3",
+              "name": "Degree",
+              "value": "={{ $json.degree }}",
+              "type": "string"
+            },
+            {
+              "id": "b5088a0d-0748-4aca-901f-ad7bd0334de8",
+              "name": "Key Skills",
+              "value": "={{ $json.key_skills }}",
+              "type": "string"
+            },
+            {
+              "id": "fd8366fb-f78d-4b19-bfb7-4695b16bd749",
+              "name": "Matched Requirements",
+              "value": "={{ $json.matched_requirements }}",
+              "type": "string"
+            },
+            {
+              "id": "62d4c227-b50d-4f66-a13e-34e9b930b3ba",
+              "name": "Missing Requirements",
+              "value": "={{ $json.missing_requirements }}",
+              "type": "string"
+            },
+            {
+              "id": "dbc94cec-95ae-40f8-aca3-bf143d20c320",
+              "name": "Score",
+              "value": "={{ $json.score }}",
+              "type": "number"
+            },
+            {
+              "id": "33b0350b-a9f9-4b97-ba49-03143dcd85c5",
+              "name": "Recommendation",
+              "value": "={{ $json.recommendation }}",
+              "type": "string"
+            },
+            {
+              "id": "2504ee1b-8314-4c53-a8c3-296d34eb4b47",
+              "name": "Reason",
+              "value": "={{ $json.reason }}",
+              "type": "string"
+            },
+            {
+              "id": "e3bc2fc6-5b9c-4d81-9abc-993e5e79d4be",
+              "name": "CV File Name",
+              "value": "={{ $('Get CV Attachment').item.binary.attachment_0.fileName }}",
+              "type": "string"
+            },
+            {
+              "id": "803ebcfb-7b02-4908-b8d3-45f87f10a18b",
+              "name": "Email Subject",
+              "value": "={{ $('Get CV Attachment').item.json.headers?.subject || $('Gmail Trigger').item.json.subject || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "0f3467f5-02ec-47a1-87b5-b4c1aff4d7f0",
+              "name": "Status",
+              "value": "New",
+              "type": "string"
+            },
+            {
+              "id": "04eb65ea-dbc7-4bbe-9c3c-d33a3795eaff",
+              "name": "Human Review Required",
+              "value": "={{ $json.human_review_required }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1104,
+        -96
+      ],
+      "id": "babfc14f-ba91-406b-b8a8-d27810be2889",
+      "name": "Prepare Sheet Row"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1pFrnYMTrFnzMOxTb0RkrnT1iuWAnrDgOTMlxgma9irw",
+          "mode": "list",
+          "cachedResultName": "AI Resume Screening Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1pFrnYMTrFnzMOxTb0RkrnT1iuWAnrDgOTMlxgma9irw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1pFrnYMTrFnzMOxTb0RkrnT1iuWAnrDgOTMlxgma9irw/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.Date }}",
+            "Candidate Name": "={{ $json['Candidate Name'] }}",
+            "Email": "={{ $json.Email }}",
+            "Phone": "={{ $json.Phone }}",
+            "Role Applied": "={{ $json['Role Applied'] }}",
+            "Current Location": "={{ $json['Current Location'] }}",
+            "Current Job Title": "={{ $json['Current Job Title'] }}",
+            "Total Experience": "={{ $json['Total Experience'] }}",
+            "Degree": "={{ $json.Degree }}",
+            "Key Skills": "={{ $json['Key Skills'] }}",
+            "Matched Requirements": "={{ $json['Matched Requirements'] }}",
+            "Missing Requirements": "={{ $json['Missing Requirements'] }}",
+            "Score": "={{ $json.Score }}",
+            "Recommendation": "={{ $json.Recommendation }}",
+            "Reason": "={{ $json.Reason }}",
+            "Human Review Required": "={{ $json['Human Review Required'] }}",
+            "CV File Name": "={{ $json['CV File Name'] }}",
+            "Email Subject": "={{ $json['Email Subject'] }}",
+            "Status": "={{ $json.Status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Candidate Name",
+              "displayName": "Candidate Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Role Applied",
+              "displayName": "Role Applied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Current Location",
+              "displayName": "Current Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Current Job Title",
+              "displayName": "Current Job Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Experience",
+              "displayName": "Total Experience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Degree",
+              "displayName": "Degree",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Key Skills",
+              "displayName": "Key Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tools",
+              "displayName": "Tools",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Matched Requirements",
+              "displayName": "Matched Requirements",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Missing Requirements",
+              "displayName": "Missing Requirements",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Recommendation",
+              "displayName": "Recommendation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Human Review Required",
+              "displayName": "Human Review Required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CV File Name",
+              "displayName": "CV File Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Subject",
+              "displayName": "Email Subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1312,
+        -96
+      ],
+      "id": "5e6168c3-7814-4031-bfe1-4c7aa881b2d2",
+      "name": "Google Sheets Save",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MoIECc4qtemsa9LP",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Update on Your Application - Architectural Engineer",
+        "message": "=Dear {{ $json[\"Candidate Name\"] }},  Thank you for applying for the Architectural Engineer position.  After reviewing your profile against the initial job-related requirements, your experience does not appear to closely match the current role requirements. We appreciate your interest and encourage you to apply for future opportunities that better match your profile.  Best regards, HR Team Imran Holding Engineering & Consulting",
+        "options": {
+          "sendTo": "={{ $json.Email }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1936,
+        192
+      ],
+      "id": "3fda19c7-cda6-410e-9c02-6104b74edf34",
+      "name": "Create a draft",
+      "webhookId": "a9433ea2-3300-413f-9506-f8e025d62552",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "81e128a2-721e-48be-b275-892c0b06df1d",
+              "leftValue": "={{ Number($json.Score) }}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1520,
+        -96
+      ],
+      "id": "aa07503b-da35-4c17-9672-9d9508b6d32e",
+      "name": "Shortlist Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6688d854-6202-4a91-b8c9-c6699476c26e",
+              "leftValue": "={{ Number($json.Score) }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1648,
+        -16
+      ],
+      "id": "7a0e9a85-3764-4bb8-8014-b2c19d07072a",
+      "name": "Maybe Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bc3784f9-7683-4743-a157-de4455941b75",
+              "leftValue": "={{ Number($json.Score) }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1744,
+        192
+      ],
+      "id": "76d6e1ff-4d4f-4a96-bb9b-c65f668148db",
+      "name": "Reject Check"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Shortlisted for Architectural Engineer Position",
+        "message": "=Dear {{ $json[\"Candidate Name\"] }},  Thank you for applying for the Architectural Engineer position.  Your profile has been reviewed against the initial job-related requirements and appears to be a strong match for the role. Our HR team will review your application further and contact you regarding the next step.  Best regards, HR Team Imran Holding Engineering & Consulting",
+        "options": {
+          "sendTo": "={{ $json.Email }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1728,
+        -192
+      ],
+      "id": "0eb00aba-ef95-4d5b-b8c6-6a104a609302",
+      "name": "Create Shortlist Draft",
+      "webhookId": "12016896-246a-43ef-857b-e536ea2778b9",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Application Under Review - Architectural Engineer",
+        "message": "=Dear {{ $json[\"Candidate Name\"] }},  Thank you for applying for the Architectural Engineer position.  Your profile has been received and is currently under HR review. Some parts of your experience appear relevant, and our team will manually review your application before deciding the next step.  Best regards, HR Team Imran Holding Engineering & Consulting",
+        "options": {
+          "sendTo": "={{ $json.Email }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        -160
+      ],
+      "id": "a17d4847-e206-454d-8897-c1b9f57bffee",
+      "name": "Create Maybe Draft",
+      "webhookId": "2043c85f-f0a5-47b1-a664-c3900c9412ad",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Update on Your Application - Architectural Engineer",
+        "message": "=Dear {{ $json[\"Candidate Name\"] }},\n\nThank you for applying for the Architectural Engineer position.\n\nAfter reviewing your profile against the initial job-related requirements, your experience does not appear to closely match the current role requirements. We appreciate your interest and encourage you to apply for future opportunities that better match your profile.\n\nBest regards,\nHR Team\nImran Holding Engineering & Consulting\n",
+        "options": {
+          "sendTo": "={{ $json.Email }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "47756188-f670-4ba7-b110-baff850bdf73",
+      "name": "Create Rejection Draft",
+      "webhookId": "2043c85f-f0a5-47b1-a664-c3900c9412ad",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "sVK8EEEkG1TBSb2A",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get CV Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get CV Attachment": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "AI Resume Screener",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Resume Screener",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Resume Screener": {
+      "main": [
+        [
+          {
+            "node": "Parse AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Prepare Sheet Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Sheet Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Save": {
+      "main": [
+        [
+          {
+            "node": "Shortlist Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shortlist Check": {
+      "main": [
+        [
+          {
+            "node": "Create Shortlist Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Maybe Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maybe Check": {
+      "main": [
+        [
+          {
+            "node": "Create Maybe Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Rejection Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reject Check": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Create a draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b399b720-bdf3-4a9f-a630-d14759980c63",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0e6aa48c8b66bc4d2545a4b5a8dbd760abdf6fbb2387637798bc9b42bdcfb4a5"
+  },
+  "nodeGroups": [],
+  "id": "D9evSYdZ0V1sCFbY",
+  "tags": []
+}
